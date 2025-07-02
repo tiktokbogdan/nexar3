@@ -25,7 +25,7 @@ const AuthConfirmPage = () => {
       const token = params.get('token');
       const type = params.get('type');
       
-      if (!token || type !== 'email_confirm') {
+      if (!token) {
         setError('Link invalid sau expirat. Te rugăm să soliciți un nou link de confirmare.');
         setIsConfirming(false);
         return;
@@ -34,7 +34,7 @@ const AuthConfirmPage = () => {
       // Confirmăm email-ul
       const { error } = await supabase.auth.verifyOtp({
         token_hash: token,
-        type: 'email_change'
+        type: type === 'email_change' ? 'email_change' : 'signup'
       });
       
       if (error) {

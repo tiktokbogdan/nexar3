@@ -1,13 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Search, Filter, MapPin, Calendar, Gauge, ChevronLeft, ChevronRight, Settings, Fuel, User, X, SlidersHorizontal, Building, RefreshCw } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Search, Filter, MapPin, Calendar, Gauge, ChevronLeft, ChevronRight, Settings, Fuel, User, X, SlidersHorizontal, Building, RefreshCw, Store, Clock } from 'lucide-react';
 import { listings, supabase, romanianCities } from '../lib/supabase';
+import NetworkErrorHandler from '../components/NetworkErrorHandler';
 
 const ListingsPage = () => {
   // On desktop, show filters by default. On mobile, hide them by default
   const [showFilters, setShowFilters] = useState(window.innerWidth >= 1024);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState({
     priceMin: '',
     priceMax: '',
@@ -22,11 +24,13 @@ const ListingsPage = () => {
     engineMin: '',
     engineMax: '',
     condition: '',
-    sellerType: ''
+    sellerType: '',
+    availability: ''
   });
   const [allListings, setAllListings] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [networkError, setNetworkError] = useState<any>(null);
   const itemsPerPage = 10;
   const navigate = useNavigate();
 
@@ -43,14 +47,22 @@ const ListingsPage = () => {
   // Scroll to top when component mounts
   useEffect(() => {
     window.scrollTo(0, 0);
+    
+    // Check for category in URL params
+    const categoryParam = searchParams.get('categorie');
+    if (categoryParam) {
+      setFilters(prev => ({ ...prev, category: categoryParam }));
+    }
+    
     loadListings();
-  }, []);
+  }, [searchParams]);
 
   // Load real listings from Supabase
   const loadListings = async () => {
     try {
       setIsLoading(true);
       setError(null);
+      setNetworkError(null);
       
       console.log('🔄 Loading listings from Supabase...');
       
@@ -58,7 +70,11 @@ const ListingsPage = () => {
       
       if (error) {
         console.error('❌ Error loading listings:', error);
-        setError('Nu s-au putut încărca anunțurile');
+        if (error.message?.includes('fetch') || error.message?.includes('network')) {
+          setNetworkError(error);
+        } else {
+          setError('Nu s-au putut încărca anunțurile');
+        }
         return;
       }
       
@@ -87,14 +103,19 @@ const ListingsPage = () => {
         views_count: listing.views_count || 0,
         favorites_count: listing.favorites_count || 0,
         created_at: listing.created_at,
-        status: listing.status
+        status: listing.status,
+        availability: listing.availability || 'pe_stoc'
       }));
       
       setAllListings(formattedListings);
       
-    } catch (err) {
+    } catch (err: any) {
       console.error('💥 Error in loadListings:', err);
-      setError('A apărut o eroare la încărcarea anunțurilor');
+      if (err.message?.includes('fetch') || err.message?.includes('network')) {
+        setNetworkError(err);
+      } else {
+        setError('A apărut o eroare la încărcarea anunțurilor');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -140,10 +161,13 @@ const ListingsPage = () => {
       const matchesSellerType = !filters.sellerType || 
                                (filters.sellerType === 'individual' && listing.sellerType === 'individual') ||
                                (filters.sellerType === 'dealer' && listing.sellerType === 'dealer');
+      
+      const matchesAvailability = !filters.availability || listing.availability === filters.availability;
 
       return matchesSearch && matchesPrice && matchesCategory && matchesBrand && 
              matchesYear && matchesMileage && matchesLocation && matchesFuel && 
-             matchesTransmission && matchesEngine && matchesCondition && matchesSellerType;
+             matchesTransmission && matchesEngine && matchesCondition && matchesSellerType &&
+             matchesAvailability;
     });
   }, [searchQuery, filters, allListings]);
 
@@ -173,10 +197,14 @@ const ListingsPage = () => {
       engineMin: '',
       engineMax: '',
       condition: '',
-      sellerType: ''
+      sellerType: '',
+      availability: ''
     });
     setSearchQuery('');
     setCurrentPage(1);
+    
+    // Clear URL parameters
+    setSearchParams({});
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -199,7 +227,7 @@ const ListingsPage = () => {
       <div className="flex flex-col sm:flex-row">
         <div className="relative w-full sm:w-64 flex-shrink-0">
           <img
-          loading="lazy"
+            loading="lazy"
             src={listing.image}
             alt={listing.title}
             className="w-full h-48 sm:h-48 object-cover group-hover:scale-105 transition-transform duration-300"
@@ -240,7 +268,7 @@ const ListingsPage = () => {
                 {listing.sellerType === 'dealer' ? (
                   <div className="inline-flex items-center space-x-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white px-3 py-1.5 rounded-full shadow-md border border-emerald-400">
                     <Building className="h-3 w-3" />
-                    <span className="font-bold text-xs tracking-wide">DEALER PREMIUM</span>
+                    <span className="font-bold text-xs tracking-wide">DEALER VERIFICAT</span>
                     <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
                   </div>
                 ) : (
@@ -250,6 +278,29 @@ const ListingsPage = () => {
                   </div>
                 )}
               </div>
+              
+              {/* Availability Badge - Only for dealers */}
+              {listing.sellerType === 'dealer' && (
+                <div className="mt-1">
+                  <span className={`px-2 py-1 inline-flex items-center text-xs leading-4 font-medium rounded-full ${
+                    listing.availability === "pe_stoc" 
+                      ? "bg-green-100 text-green-800" 
+                      : "bg-blue-100 text-blue-800"
+                  }`}>
+                    {listing.availability === "pe_stoc" ? (
+                      <>
+                        <Store className="h-3 w-3 mr-1" />
+                        Pe stoc
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="h-3 w-3 mr-1" />
+                        La comandă
+                      </>
+                    )}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           
@@ -302,6 +353,17 @@ const ListingsPage = () => {
       </div>
     </Link>
   );
+
+  if (networkError) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <NetworkErrorHandler 
+          error={networkError} 
+          onRetry={loadListings} 
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-6">
@@ -550,9 +612,25 @@ const ListingsPage = () => {
                     >
                       <option value="">Toți vânzătorii</option>
                       <option value="individual">Vânzător Individual</option>
-                      <option value="dealer">Dealer Autorizat</option>
+                      <option value="dealer">Dealer Verificat</option>
                     </select>
                   </div>
+
+                  {/* Availability - only when dealer is selected */}
+                  {filters.sellerType === 'dealer' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-3">📦 Disponibilitate</label>
+                      <select
+                        value={filters.availability}
+                        onChange={(e) => handleFilterChange('availability', e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-nexar-accent focus:border-transparent"
+                      >
+                        <option value="">Toate</option>
+                        <option value="pe_stoc">Pe stoc</option>
+                        <option value="la_comanda">La comandă</option>
+                      </select>
+                    </div>
+                  )}
 
                   {/* Location */}
                   <div>

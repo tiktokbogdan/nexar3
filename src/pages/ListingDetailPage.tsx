@@ -22,8 +22,11 @@ import {
 	Building,
 	AlertTriangle,
 	RefreshCw,
+	Store,
+	Clock,
 } from "lucide-react";
 import { listings, supabase } from "../lib/supabase";
+import NetworkErrorHandler from "../components/NetworkErrorHandler";
 
 const ListingDetailPage = () => {
 	const { id } = useParams();
@@ -34,6 +37,7 @@ const ListingDetailPage = () => {
 	const [listing, setListing] = useState<any>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
+	const [networkError, setNetworkError] = useState<any>(null);
 
 	// Scroll to top when component mounts
 	useEffect(() => {
@@ -48,6 +52,7 @@ const ListingDetailPage = () => {
 		try {
 			setIsLoading(true);
 			setError(null);
+			setNetworkError(null);
 
 			console.log("🔄 Loading listing details for ID:", listingId);
 
@@ -55,7 +60,11 @@ const ListingDetailPage = () => {
 
 			if (error) {
 				console.error("❌ Error loading listing:", error);
-				setError("Nu s-a putut încărca anunțul");
+				if (error.message?.includes('fetch') || error.message?.includes('network')) {
+					setNetworkError(error);
+				} else {
+					setError("Nu s-a putut încărca anunțul");
+				}
 				return;
 			}
 
@@ -121,12 +130,17 @@ const ListingDetailPage = () => {
 				posted: formatDate(data.created_at),
 				views: data.views_count || 0,
 				featured: data.featured || false,
+				availability: data.availability || "pe_stoc",
 			};
 
 			setListing(formattedListing);
-		} catch (err) {
+		} catch (err: any) {
 			console.error("💥 Error in loadListing:", err);
-			setError("A apărut o eroare la încărcarea anunțului");
+			if (err.message?.includes('fetch') || err.message?.includes('network')) {
+				setNetworkError(err);
+			} else {
+				setError("A apărut o eroare la încărcarea anunțului");
+			}
 		} finally {
 			setIsLoading(false);
 		}
@@ -212,6 +226,18 @@ const ListingDetailPage = () => {
 					<div className="w-16 h-16 border-4 border-nexar-accent border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
 					<p className="text-gray-600">Se încarcă anunțul...</p>
 				</div>
+			</div>
+		);
+	}
+
+	// Network error state
+	if (networkError) {
+		return (
+			<div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+				<NetworkErrorHandler 
+					error={networkError} 
+					onRetry={() => id && loadListing(id)} 
+				/>
 			</div>
 		);
 	}
@@ -404,7 +430,7 @@ const ListingDetailPage = () => {
 									<div className="flex items-center space-x-3">
 										<Building className="h-6 w-6" />
 										<div>
-											<div className="font-bold text-lg">DEALER PREMIUM</div>
+											<div className="font-bold text-lg">DEALER VERIFICAT</div>
 											<button
 												onClick={handleSellerClick}
 												className="text-white underline hover:text-emerald-100 transition-colors text-sm"
@@ -414,6 +440,29 @@ const ListingDetailPage = () => {
 										</div>
 									</div>
 									<div className="w-3 h-3 bg-white rounded-full animate-pulse"></div>
+								</div>
+							)}
+
+							{/* Availability Badge - Only for dealers */}
+							{listing.seller.type === "dealer" && (
+								<div className="mb-4 flex justify-start">
+									<div className={`inline-flex items-center space-x-2 px-4 py-2 rounded-lg ${
+										listing.availability === "pe_stoc" 
+											? "bg-green-100 text-green-800 border border-green-200" 
+											: "bg-blue-100 text-blue-800 border border-blue-200"
+									}`}>
+										{listing.availability === "pe_stoc" ? (
+											<>
+												<Store className="h-4 w-4" />
+												<span className="font-medium">Pe stoc</span>
+											</>
+										) : (
+											<>
+												<Clock className="h-4 w-4" />
+												<span className="font-medium">La comandă</span>
+											</>
+										)}
+									</div>
 								</div>
 							)}
 
@@ -564,7 +613,7 @@ const ListingDetailPage = () => {
 								<div className="mb-4 p-3 bg-emerald-100 text-emerald-800 rounded-lg flex items-center justify-between lg:hidden">
 									<div className="flex items-center space-x-2">
 										<Building className="h-5 w-5" />
-										<span className="font-bold">DEALER PREMIUM</span>
+										<span className="font-bold">DEALER VERIFICAT</span>
 									</div>
 									<div className="w-2 h-2 bg-emerald-600 rounded-full animate-pulse"></div>
 								</div>

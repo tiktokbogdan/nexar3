@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 // If you still get "Cannot find module 'lucide-react'" after installing, try this workaround:
-import { X, Plus, Check, AlertTriangle, Camera } from "lucide-react";
+import { X, Plus, Check, AlertTriangle, Camera, Store, Clock } from "lucide-react";
 // If the error persists, ensure you have installed lucide-react with:
 // npm install lucide-react
 // and that your node_modules are not excluded by your tsconfig.json or IDE.
@@ -44,6 +44,7 @@ const CreateListingPage = () => {
 		features: [] as string[],
 		phone: "",
 		email: "",
+		availability: "pe_stoc", // Default value
 	});
 
 	// Check if user is logged in and load profile
@@ -154,6 +155,11 @@ const CreateListingPage = () => {
 		"Foarte bună",
 		"Bună",
 		"Satisfăcătoare",
+	];
+
+	const availabilityOptions = [
+		{ value: "pe_stoc", label: "Pe stoc" },
+		{ value: "la_comanda", label: "La comandă" },
 	];
 
 	const availableFeatures = [
@@ -272,6 +278,11 @@ const CreateListingPage = () => {
 				} else if (!romanianCities.includes(formData.location.trim())) {
 					newErrors.location =
 						"Te rugăm să selectezi un oraș din lista disponibilă";
+				}
+				
+				// Verifică disponibilitatea pentru dealeri
+				if (userProfile?.seller_type === "dealer" && !formData.availability) {
+					newErrors.availability = "Disponibilitatea este obligatorie pentru dealeri";
 				}
 				break;
 
@@ -437,6 +448,7 @@ const CreateListingPage = () => {
 				seller_name: userProfile.name || "Utilizator",
 				seller_type: userProfile.seller_type,
 				status: "pending", // Anunțul va fi în așteptare până la aprobarea de către admin
+				availability: userProfile.seller_type === "dealer" ? formData.availability : "pe_stoc",
 			};
 
 			console.log("📝 Mapped listing data:", listingData);
@@ -557,7 +569,7 @@ const CreateListingPage = () => {
 							</div>
 							<div className="text-xs text-gray-600">
 								{userProfile.seller_type === "dealer"
-									? "Dealer Autorizat"
+									? "Dealer Verificat"
 									: "Vânzător Privat"}
 							</div>
 						</div>
@@ -934,6 +946,50 @@ const CreateListingPage = () => {
 										</p>
 									)}
 								</div>
+
+								{/* Availability field - only for dealers */}
+								{userProfile.seller_type === "dealer" && (
+									<div>
+										<label className="block text-sm font-medium text-gray-700 mb-2">
+											Disponibilitate *
+										</label>
+										<div className="flex space-x-4">
+											{availabilityOptions.map((option) => (
+												<label 
+													key={option.value} 
+													className={`flex items-center space-x-2 border rounded-lg px-4 py-3 cursor-pointer transition-colors ${
+														formData.availability === option.value 
+															? 'border-nexar-accent bg-nexar-accent/5' 
+															: 'border-gray-300 hover:bg-gray-50'
+													}`}
+												>
+													<input
+														type="radio"
+														name="availability"
+														value={option.value}
+														checked={formData.availability === option.value}
+														onChange={(e) => handleInputChange("availability", e.target.value)}
+														className="sr-only"
+													/>
+													{option.value === "pe_stoc" ? (
+														<Store className={`h-5 w-5 ${formData.availability === option.value ? 'text-nexar-accent' : 'text-gray-400'}`} />
+													) : (
+														<Clock className={`h-5 w-5 ${formData.availability === option.value ? 'text-nexar-accent' : 'text-gray-400'}`} />
+													)}
+													<span className={formData.availability === option.value ? 'font-medium' : ''}>
+														{option.label}
+													</span>
+												</label>
+											))}
+										</div>
+										{errors.availability && (
+											<p className="mt-1 text-sm text-red-600 flex items-center">
+												<AlertTriangle className="h-4 w-4 mr-1" />
+												{errors.availability}
+											</p>
+										)}
+									</div>
+								)}
 							</div>
 						</div>
 					)}
@@ -961,7 +1017,6 @@ const CreateListingPage = () => {
 								{images.map((image, index) => (
 									<div key={index} className="relative group">
 										<img
-										loading="lazy"
 											src={image}
 											alt={`Upload ${index + 1}`}
 											className="w-full h-48 object-cover rounded-lg"
@@ -1194,7 +1249,7 @@ const CreateListingPage = () => {
 										</span>
 										<span className="ml-2">
 											{userProfile.seller_type === "dealer"
-												? "Dealer Autorizat"
+												? "Dealer Verificat"
 												: "Vânzător Privat"}
 										</span>
 									</div>
@@ -1204,6 +1259,16 @@ const CreateListingPage = () => {
 										</span>
 										<span className="ml-2">{images.length}/5</span>
 									</div>
+									{userProfile.seller_type === "dealer" && (
+										<div>
+											<span className="text-green-700 font-medium">
+												Disponibilitate:
+											</span>
+											<span className="ml-2">
+												{formData.availability === "pe_stoc" ? "Pe stoc" : "La comandă"}
+											</span>
+										</div>
+									)}
 								</div>
 							</div>
 

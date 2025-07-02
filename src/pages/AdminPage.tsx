@@ -18,8 +18,12 @@ import {
 	Search,
 	CheckCircle,
 	XCircle,
+	Clock,
+	Tag,
+	Store,
 } from "lucide-react";
 import { admin, supabase } from "../lib/supabase";
+import NetworkErrorHandler from "../components/NetworkErrorHandler";
 
 const AdminPage = () => {
 	const [activeTab, setActiveTab] = useState("listings");
@@ -34,6 +38,7 @@ const AdminPage = () => {
 		{},
 	);
 	const navigate = useNavigate();
+	const [networkError, setNetworkError] = useState<any>(null);
 
 	useEffect(() => {
 		checkAdminAndLoadData();
@@ -43,6 +48,7 @@ const AdminPage = () => {
 		try {
 			setIsLoading(true);
 			setError(null);
+			setNetworkError(null);
 
 			// Verifică dacă utilizatorul este admin
 			const isAdminUser = await admin.isAdmin();
@@ -62,9 +68,13 @@ const AdminPage = () => {
 			} else if (activeTab === "users") {
 				await loadUsers();
 			}
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error checking admin status:", err);
-			setError("A apărut o eroare la verificarea statusului de administrator.");
+			if (err.message?.includes('fetch') || err.message?.includes('network')) {
+				setNetworkError(err);
+			} else {
+				setError("A apărut o eroare la verificarea statusului de administrator.");
+			}
 		} finally {
 			setIsLoading(false);
 		}
@@ -74,6 +84,7 @@ const AdminPage = () => {
 		try {
 			setIsLoading(true);
 			setError(null);
+			setNetworkError(null);
 
 			// Folosim query direct pentru a obține TOATE anunțurile, inclusiv cele în așteptare
 			const { data, error } = await supabase
@@ -93,15 +104,23 @@ const AdminPage = () => {
 
 			if (error) {
 				console.error("Error loading listings:", error);
-				setError("Nu s-au putut încărca anunțurile.");
+				if (error.message?.includes('fetch') || error.message?.includes('network')) {
+					setNetworkError(error);
+				} else {
+					setError("Nu s-au putut încărca anunțurile.");
+				}
 				return;
 			}
 
 			console.log("Loaded listings:", data?.length || 0, data);
 			setListings(data || []);
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error loading listings:", err);
-			setError("A apărut o eroare la încărcarea anunțurilor.");
+			if (err.message?.includes('fetch') || err.message?.includes('network')) {
+				setNetworkError(err);
+			} else {
+				setError("A apărut o eroare la încărcarea anunțurilor.");
+			}
 		} finally {
 			setIsLoading(false);
 		}
@@ -111,19 +130,28 @@ const AdminPage = () => {
 		try {
 			setIsLoading(true);
 			setError(null);
+			setNetworkError(null);
 
 			const { data, error } = await admin.getAllUsers();
 
 			if (error) {
 				console.error("Error loading users:", error);
-				setError("Nu s-au putut încărca utilizatorii.");
+				if (error.message?.includes('fetch') || error.message?.includes('network')) {
+					setNetworkError(error);
+				} else {
+					setError("Nu s-au putut încărca utilizatorii.");
+				}
 				return;
 			}
 
 			setUsers(data || []);
-		} catch (err) {
+		} catch (err: any) {
 			console.error("Error loading users:", err);
-			setError("A apărut o eroare la încărcarea utilizatorilor.");
+			if (err.message?.includes('fetch') || err.message?.includes('network')) {
+				setNetworkError(err);
+			} else {
+				setError("A apărut o eroare la încărcarea utilizatorilor.");
+			}
 		} finally {
 			setIsLoading(false);
 		}
@@ -132,6 +160,7 @@ const AdminPage = () => {
 	const handleTabChange = async (tab: string) => {
 		setActiveTab(tab);
 		setSearchQuery("");
+		setStatusFilter("all");
 
 		if (tab === "listings" && listings.length === 0) {
 			await loadAllListings();
@@ -253,42 +282,20 @@ const AdminPage = () => {
 		try {
 			setIsProcessing((prev) => ({ ...prev, [userId]: true }));
 
-			// 1. Obținem profilul utilizatorului
-			const { data: profile, error: profileError } = await supabase
-				.from("profiles")
-				.select("id")
-				.eq("user_id", userId)
-				.single();
+			// Folosim funcția RPC pentru a șterge utilizatorul și toate datele asociate
+			const { data, error } = await supabase.rpc('delete_user_complete', {
+				user_id_to_delete: userId
+			});
 
-			if (profileError || !profile) {
-				console.error("Error fetching user profile:", profileError);
-				alert("Eroare la găsirea profilului utilizatorului");
+			if (error) {
+				console.error("Error deleting user:", error);
+				alert(`Eroare la ștergerea utilizatorului: ${error.message}`);
 				setIsProcessing((prev) => ({ ...prev, [userId]: false }));
 				return;
 			}
 
-			// 2. Ștergem toate anunțurile utilizatorului
-			const { error: listingsError } = await supabase
-				.from("listings")
-				.delete()
-				.eq("seller_id", profile.id);
-
-			if (listingsError) {
-				console.error("Error deleting user listings:", listingsError);
-				alert("Eroare la ștergerea anunțurilor utilizatorului");
-				setIsProcessing((prev) => ({ ...prev, [userId]: false }));
-				return;
-			}
-
-			// 3. Ștergem profilul utilizatorului
-			const { error: deleteProfileError } = await supabase
-				.from("profiles")
-				.delete()
-				.eq("user_id", userId);
-
-			if (deleteProfileError) {
-				console.error("Error deleting user profile:", deleteProfileError);
-				alert("Eroare la ștergerea profilului utilizatorului");
+			if (!data) {
+				alert("Eroare la ștergerea utilizatorului: Nu s-a găsit profilul utilizatorului");
 				setIsProcessing((prev) => ({ ...prev, [userId]: false }));
 				return;
 			}
@@ -323,8 +330,6 @@ const AdminPage = () => {
 	};
 
 	const filteredListings = listings.filter((listing) => {
-		console.log("STATUS:", listing.status); // 👈 AICI am adăugat linia
-
 		const matchesSearch =
 			!searchQuery ||
 			listing.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -355,6 +360,18 @@ const AdminPage = () => {
 					<div className="w-16 h-16 border-4 border-nexar-accent border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
 					<p className="text-gray-600">Se încarcă datele...</p>
 				</div>
+			</div>
+		);
+	}
+
+	// Network error state
+	if (networkError) {
+		return (
+			<div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+				<NetworkErrorHandler 
+					error={networkError} 
+					onRetry={checkAdminAndLoadData} 
+				/>
 			</div>
 		);
 	}
@@ -533,7 +550,6 @@ const AdminPage = () => {
 													<div className="flex items-center">
 														<div className="h-10 w-10 flex-shrink-0">
 															<img
-															loading="lazy"
 																className="h-10 w-10 rounded-md object-cover"
 																src={
 																	listing.images && listing.images[0]
@@ -565,9 +581,9 @@ const AdminPage = () => {
 															{listing.seller_name}
 														</div>
 														<div className="ml-2">
-															{listing.profiles?.seller_type === "dealer" ? (
+															{listing.seller_type === "dealer" ? (
 																<span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-																	Dealer
+																	Dealer Verificat
 																</span>
 															) : (
 																<span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
@@ -579,6 +595,27 @@ const AdminPage = () => {
 													<div className="text-sm text-gray-500">
 														{listing.location}
 													</div>
+													{listing.seller_type === "dealer" && listing.availability && (
+														<div className="mt-1">
+															<span className={`px-2 py-1 inline-flex text-xs leading-4 font-medium rounded-full ${
+																listing.availability === "pe_stoc" 
+																	? "bg-green-100 text-green-800" 
+																	: "bg-blue-100 text-blue-800"
+															}`}>
+																{listing.availability === "pe_stoc" ? (
+																	<>
+																		<Store className="h-3 w-3 mr-1" />
+																		Pe stoc
+																	</>
+																) : (
+																	<>
+																		<Clock className="h-3 w-3 mr-1" />
+																		La comandă
+																	</>
+																)}
+															</span>
+														</div>
+													)}
 												</td>
 												<td className="px-6 py-4 whitespace-nowrap">
 													<span
@@ -808,7 +845,6 @@ const AdminPage = () => {
 														<div className="h-10 w-10 flex-shrink-0">
 															{user.avatar_url ? (
 																<img
-																loading="lazy"
 																	className="h-10 w-10 rounded-full object-cover"
 																	src={user.avatar_url}
 																	alt={user.name}
@@ -853,7 +889,7 @@ const AdminPage = () => {
 														<div className="flex items-center">
 															<Building className="h-4 w-4 text-green-600 mr-1" />
 															<span className="text-sm text-green-800 font-medium">
-																Dealer
+																Dealer Verificat
 															</span>
 														</div>
 													) : (

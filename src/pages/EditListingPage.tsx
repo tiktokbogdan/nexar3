@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { X, Plus, Check, AlertTriangle, Camera, ArrowLeft, ChevronDown, Trash2 } from 'lucide-react';
+import { X, Plus, Check, AlertTriangle, Camera, ArrowLeft, ChevronDown, Trash2, Store, Clock } from 'lucide-react';
 import { listings, isAuthenticated, supabase, romanianCities, admin } from '../lib/supabase';
 import SuccessModal from '../components/SuccessModal';
 import FixSupabaseButton from '../components/FixSupabaseButton';
+import NetworkErrorHandler from '../components/NetworkErrorHandler';
 
 const EditListingPage = () => {
   const { id } = useParams();
@@ -19,6 +20,7 @@ const EditListingPage = () => {
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [filteredCities, setFilteredCities] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [networkError, setNetworkError] = useState<any>(null);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -38,8 +40,14 @@ const EditListingPage = () => {
     features: [] as string[],
     phone: '',
     email: '',
-    status: ''
+    status: '',
+    availability: 'pe_stoc'
   });
+
+  const availabilityOptions = [
+    { value: "pe_stoc", label: "Pe stoc", icon: Store },
+    { value: "la_comanda", label: "La comandă", icon: Clock },
+  ];
 
   useEffect(() => {
     loadListing();
@@ -48,6 +56,7 @@ const EditListingPage = () => {
   const loadListing = async () => {
     try {
       setIsLoading(true);
+      setNetworkError(null);
       
       // Verificăm dacă utilizatorul este admin
       const isAdminUser = await admin.isAdmin();
@@ -70,7 +79,18 @@ const EditListingPage = () => {
         .eq('id', id)
         .single();
 
-      if (error || !listingData) {
+      if (error) {
+        console.error("Error loading listing:", error);
+        if (error.message?.includes('fetch') || error.message?.includes('network')) {
+          setNetworkError(error);
+        } else {
+          alert('Anunțul nu a fost găsit');
+          navigate('/profil');
+        }
+        return;
+      }
+
+      if (!listingData) {
         alert('Anunțul nu a fost găsit');
         navigate('/profil');
         return;
@@ -119,12 +139,17 @@ const EditListingPage = () => {
         features: listingData.features || [],
         phone: '',
         email: '',
-        status: listingData.status || 'pending'
+        status: listingData.status || 'pending',
+        availability: listingData.availability || 'pe_stoc'
       });
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error:', err);
-      navigate('/profil');
+      if (err.message?.includes('fetch') || err.message?.includes('network')) {
+        setNetworkError(err);
+      } else {
+        navigate('/profil');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -364,6 +389,11 @@ const EditListingPage = () => {
       newErrors.images = 'Trebuie să adaugi cel puțin o fotografie';
     }
     
+    // Verifică disponibilitatea pentru dealeri
+    if (originalListing?.seller_type === "dealer" && !formData.availability) {
+      newErrors.availability = "Disponibilitatea este obligatorie pentru dealeri";
+    }
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -395,7 +425,9 @@ const EditListingPage = () => {
         features: formData.features,
         updated_at: new Date().toISOString(),
         // Dacă este admin, păstrăm statusul selectat, altfel setăm la pending
-        status: isAdmin ? formData.status : 'pending'
+        status: isAdmin ? formData.status : 'pending',
+        // Adăugăm disponibilitatea doar pentru dealeri
+        availability: originalListing.seller_type === 'dealer' ? formData.availability : 'pe_stoc'
       };
       
       // Actualizăm anunțul
@@ -424,6 +456,17 @@ const EditListingPage = () => {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="w-16 h-16 border-4 border-nexar-accent border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (networkError) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <NetworkErrorHandler 
+          error={networkError} 
+          onRetry={loadListing} 
+        />
       </div>
     );
   }
@@ -801,6 +844,46 @@ const EditListingPage = () => {
                   )}
                 </div>
 
+                {/* Availability field - only for dealers */}
+                {originalListing?.seller_type === "dealer" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Disponibilitate *
+                    </label>
+                    <div className="flex space-x-4">
+                      {availabilityOptions.map((option) => (
+                        <label 
+                          key={option.value} 
+                          className={`flex items-center space-x-2 border rounded-lg px-4 py-3 cursor-pointer transition-colors ${
+                            formData.availability === option.value 
+                              ? 'border-nexar-accent bg-nexar-accent/5' 
+                              : 'border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="availability"
+                            value={option.value}
+                            checked={formData.availability === option.value}
+                            onChange={(e) => handleInputChange("availability", e.target.value)}
+                            className="sr-only"
+                          />
+                          <option.icon className={`h-5 w-5 ${formData.availability === option.value ? 'text-nexar-accent' : 'text-gray-400'}`} />
+                          <span className={formData.availability === option.value ? 'font-medium' : ''}>
+                            {option.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {errors.availability && (
+                      <p className="mt-1 text-sm text-red-600 flex items-center">
+                        <AlertTriangle className="h-4 w-4 mr-1" />
+                        {errors.availability}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Status field - only for admin */}
                 {isAdmin && (
                   <div>
@@ -839,7 +922,6 @@ const EditListingPage = () => {
                 {images.map((image, index) => (
                   <div key={index} className="relative group">
                     <img
-                    loading="lazy"
                       src={image}
                       alt={`Upload ${index + 1}`}
                       className="w-full h-48 object-cover rounded-lg"

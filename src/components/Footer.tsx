@@ -25,13 +25,13 @@ const Footer = () => {
             <div className="flex items-center space-x-3">
               <Link to="/" onClick={handleLinkClick}>
                 <img 
-                loading="lazy"
+                  loading="lazy"
                   src="/Nexar - logo_white & red.png" 
                   alt="Nexar Logo" 
                   className="h-28 sm:h-32 md:h-36 w-auto hover:scale-105 transition-transform duration-300"
                   onError={(e) => {
                     const target = e.currentTarget as HTMLImageElement;
-                 if (target.src.includes('Nexar - logo_white & red.png')) {
+                    if (target.src.includes('Nexar - logo_white & red.png')) {
                       target.src =  '/nexar-logo.png';
                     } else if (target.src.includes('nexar-logo.png')) {
                       target.src = '/image.png';
@@ -231,7 +231,7 @@ const Footer = () => {
                     <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-nexar-accent group-hover:w-full transition-all duration-500 ease-out"></span>
                   </span>
                   <img 
-                  loading="lazy"
+                    loading="lazy"
                     src="/Next Soft Logo - ALB.png" 
                     alt="NEXT SOFT" 
                     className="h-12 w-12 sm:h-14 sm:w-14 object-contain opacity-70 group-hover:opacity-100 transition-all duration-500 transform-gpu"

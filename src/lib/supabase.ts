@@ -39,6 +39,7 @@ export interface Listing {
 	created_at: string;
 	updated_at: string;
 	status: string;
+	availability?: "pe_stoc" | "la_comanda";
 }
 
 export interface User {
@@ -671,6 +672,8 @@ export const listings = {
 					query = query.lte("engine_capacity", filters.engineMax);
 				if (filters.mileageMax)
 					query = query.lte("mileage", filters.mileageMax);
+				if (filters.availability)
+					query = query.eq("availability", filters.availability);
 			}
 
 			const { data, error } = await query;
@@ -908,7 +911,7 @@ export const listings = {
 			// 1. Obținem anunțul curent pentru a păstra imaginile existente
 			const { data: currentListing, error: fetchError } = await supabase
 				.from("listings")
-				.select("images, seller_id, seller_name, status")
+				.select("images, seller_id, seller_name, status, seller_type, availability")
 				.eq("id", id)
 				.single();
 
@@ -1478,81 +1481,21 @@ export const admin = {
 	// Șterge un utilizator și toate anunțurile sale
 	deleteUser: async (userId: string) => {
 		try {
-			// 1. Obținem profilul utilizatorului
-			const { data: profile, error: profileError } = await supabase
-				.from("profiles")
-				.select("id")
-				.eq("user_id", userId)
-				.single();
+			// Folosim funcția RPC pentru a șterge utilizatorul și toate datele asociate
+			const { data, error } = await supabase.rpc('delete_user_complete', {
+				user_id_to_delete: userId
+			});
 
-			if (profileError || !profile) {
-				console.error("Error fetching user profile:", profileError);
-				return { error: profileError || new Error("User profile not found") };
+			if (error) {
+				console.error("Error deleting user:", error);
+				return { error };
 			}
 
-			// 2. Obținem toate anunțurile utilizatorului pentru a șterge imaginile
-			const { data: userListings } = await supabase
-				.from("listings")
-				.select("id, images")
-				.eq("seller_id", profile.id);
-
-			// 3. Ștergem imaginile din storage pentru fiecare anunț
-			if (userListings && userListings.length > 0) {
-				console.log(
-					`Found ${userListings.length} listings to delete for user ${userId}`,
-				);
-
-				for (const listing of userListings) {
-					if (listing.images && listing.images.length > 0) {
-						for (const imageUrl of listing.images) {
-							try {
-								// Extragem path-ul din URL
-								const urlParts = imageUrl.split("/");
-								const fileName = urlParts[urlParts.length - 1];
-								const sellerFolder = urlParts[urlParts.length - 2];
-								const filePath = `${sellerFolder}/${fileName}`;
-
-								await supabase.storage
-									.from("listing-images")
-									.remove([filePath]);
-
-								console.log(`Removed image from storage: ${filePath}`);
-							} catch (error) {
-								console.error("Error removing image:", error);
-								// Continuăm cu ștergerea chiar dacă ștergerea imaginilor eșuează
-							}
-						}
-					}
-				}
+			if (!data) {
+				return { error: new Error("Failed to delete user") };
 			}
 
-			// 4. Ștergem toate anunțurile utilizatorului
-			const { error: listingsError } = await supabase
-				.from("listings")
-				.delete()
-				.eq("seller_id", profile.id);
-
-			if (listingsError) {
-				console.error("Error deleting user listings:", listingsError);
-				return { error: listingsError };
-			}
-
-			console.log(`Successfully deleted all listings for user ${userId}`);
-
-			// 5. Ștergem profilul utilizatorului
-			const { error: deleteError } = await supabase
-				.from("profiles")
-				.delete()
-				.eq("user_id", userId);
-
-			if (deleteError) {
-				console.error("Error deleting user profile:", deleteError);
-				return { error: deleteError };
-			}
-
-			console.log(
-				`Successfully deleted user ${userId} and all associated data`,
-			);
+			console.log(`Successfully deleted user ${userId} and all associated data`);
 			return { error: null };
 		} catch (err) {
 			console.error("Error deleting user:", err);
